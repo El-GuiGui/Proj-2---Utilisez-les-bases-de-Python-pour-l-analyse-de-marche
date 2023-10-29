@@ -32,6 +32,9 @@ for element in elements:
 
 
 
+
+
+
 # création du fichier data.csv
 en_tete = ["titre", "description", "prix", "disponibilite"]
 with open("data.csv", "w", newline="") as fichier_csv:
