@@ -15,7 +15,7 @@ soup = BeautifulSoup(page, "html.parser")
 
 
 
-
+#amodifier
 
 
 # récupération de tous les éléments
