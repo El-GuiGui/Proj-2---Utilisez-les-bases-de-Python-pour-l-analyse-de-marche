@@ -2,7 +2,7 @@
 import requests
 from bs4 import BeautifulSoup
 import csv
-
+import os
 
 # lien de la page du livre à scrapper
 url = "https://books.toscrape.com/catalogue/its-only-the-himalayas_981/index.html"
@@ -49,6 +49,28 @@ resultats = [donnee]
 
 
 
+
+#image src
+image_element = BeautifulSoup(reponse.text, features="html.parser").find('img')
+image_url = image_element['src'] if image_element else None
+
+# Construire l'URL complète de l'image
+base_url = "https://books.toscrape.com"
+full_image_url = base_url + image_url.lstrip('.')
+
+# Nom de fichier pour sauvegarder l'image
+image_filename = full_image_url.split('/')[-1]
+folder_name = "images"
+os.makedirs(folder_name, exist_ok=True)  # Crée le dossier s'il n'existe pas
+
+# Télécharger et sauvegarder l'image
+if full_image_url:
+    response = requests.get(full_image_url, stream=True)
+    if response.status_code == 200:
+        image_path = os.path.join(folder_name, image_filename)
+        with open(image_path, 'wb') as file:
+            for chunk in response.iter_content(1024):
+                file.write(chunk)
 
 
 #création du fichier data.csv
