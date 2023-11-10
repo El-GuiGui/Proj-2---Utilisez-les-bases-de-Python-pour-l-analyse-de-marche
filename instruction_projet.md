@@ -47,4 +47,4 @@ L'importance de la communication efficace est soulignée en tant que compétence
 
 ---
 
-Pour toute question ou retour, n'hésitez pas à me contacter via [inserer_le_lien_de_contact].
+
