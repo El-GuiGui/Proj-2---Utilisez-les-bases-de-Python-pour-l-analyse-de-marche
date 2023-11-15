@@ -1,83 +1,194 @@
-#importation des librairies
+# Importation des librairies nécessaires
 import requests
 from bs4 import BeautifulSoup
 import csv
 import os
-
-# lien de la page du livre à scrapper
-url = "https://books.toscrape.com/catalogue/its-only-the-himalayas_981/index.html"
-reponse = requests.get(url)
-page = reponse.content
-print(reponse)
+import re
+from urllib.parse import urljoin
 
 
-titre = BeautifulSoup(reponse.text, features="html.parser").find("div", {"class": "col-sm-6 product_main"}).find('h1').text
-description = BeautifulSoup(reponse.text, features="html.parser").find("article", {"class": "product_page"}).find("p", {"class": ""}).text
-price = BeautifulSoup(reponse.text, features="html.parser").find("div", {"class": "col-sm-6 product_main"}).find("p", {"class": "price_color"}).text
-disponibilite = BeautifulSoup(reponse.text, features="html.parser").find("div", {"class": "col-sm-6 product_main"}).find("p", {"class": "instock availability"}).text
-table = BeautifulSoup(reponse.text, features="html.parser").find("table", {"class": "table table-striped"})
+def extraire_urls_livres(url_categorie):
+    urls_livres = []
+    base_url = "https://books.toscrape.com/"  # URL de base pour le site
 
-#recherche url
-canonical_link = BeautifulSoup(reponse.text, features="html.parser").find('link', {'rel': 'canonical'})
-product_page_url = canonical_link['href'] if canonical_link else url  
+    while True:
+        soup = extraction(url_categorie)
+        livres = soup.find_all("article", class_="product_pod")
+        for livre in livres:
+            lien = livre.find("h3").find("a")["href"]
+            lien_complet = urljoin(base_url, lien)  # Combinaison correcte de l'URL
+            urls_livres.append(lien_complet)
 
+        next_button = soup.find("li", class_="next")
+        if next_button:
+            next_page = next_button.find("a")["href"]
+            url_categorie = urljoin(url_categorie, next_page)
+        else:
+            break
 
-# Extraire les informations du tableau
-tab = {}
-rows = table.select('tr')
-for row in rows:
-    header = row.find('th').text if row.find('th') else None
-    value = row.find('td').text if row.find('td') else None
-    if header and value:
-        tab[header] = value.strip()
-
-# Création de la liste des données
-donnee = [
-    titre, 
-    description, 
-    price, 
-    disponibilite, 
-    tab.get("UPC", ""), 
-    tab.get("Product Type", ""), 
-    tab.get("Price (excl. tax)", ""), 
-    tab.get("Price (incl. tax)", ""), 
-    tab.get("Number of reviews", ""),
-    product_page_url
-]
-
-resultats = [donnee]
+    return urls_livres
 
 
+# Fonction pour nettoyer et transformer les textes
+def transformation_texte(texte):
+    texte = re.sub(r"^\s+|\s+$", "", texte)  # Enlever les espaces en début et en fin
+    texte = re.sub(r"\s+", " ", texte)  # Remplacer les espaces multiples
+    texte = re.sub(r'[^\w\s£€$.,;:!\'"()?-]', "", texte)  # Conserver certains symboles
+    return texte
 
 
-#image src
-image_element = BeautifulSoup(reponse.text, features="html.parser").find('img')
-image_url = image_element['src'] if image_element else None
-
-# Construire l'URL complète de l'image
-base_url = "https://books.toscrape.com"
-full_image_url = base_url + image_url.lstrip('.')
-
-# Nom de fichier pour sauvegarder l'image
-image_filename = full_image_url.split('/')[-1]
-folder_name = "images"
-os.makedirs(folder_name, exist_ok=True)  # Crée le dossier s'il n'existe pas
-
-# Télécharger et sauvegarder l'image
-if full_image_url:
-    response = requests.get(full_image_url, stream=True)
-    if response.status_code == 200:
-        image_path = os.path.join(folder_name, image_filename)
-        with open(image_path, 'wb') as file:
-            for chunk in response.iter_content(1024):
-                file.write(chunk)
+# Fonction pour transformer la disponibilité en un nombre simple
+def transformation_disponibilite(texte):
+    texte = texte.strip()  # Nettoyage de base du texte
+    match = re.search(r"\d+", texte)  # Extraire le nombre
+    return match.group() if match else texte
 
 
-#création du fichier data.csv
-en_tete = ["titre", "description", "prix", "disponibilite", "upc", "product_type", "price_excl_tax", "price_incl_tax", "reviews","url"]
-with open("data.csv", "w", newline="", encoding='utf-8') as fichier_csv:
-    writer = csv.writer(fichier_csv, delimiter=',')  # Utilisation de la virgule comme délimiteur
-    writer.writerow(en_tete)
-    for donnee in resultats:
+# Fonction pour extraire les données de la page web
+def extraction(url):
+    reponse = requests.get(url)
+    reponse.encoding = "utf-8"  # Définir l'encodage
+    soup = BeautifulSoup(reponse.text, features="html.parser")
+    return soup
+
+
+# Fonction pour transformer les données extraites
+def transformation_tdp(soup, url_livre):
+    product_main = soup.find("div", {"class": "col-sm-6 product_main"})
+    if not product_main:
+        return [None] * 10  # Retourner une liste de None si la page n'est pas correcte
+
+    title = transformation_texte(product_main.find("h1").text)
+    # Extraction et transformation du titre, de la description, du prix
+
+    description = transformation_texte(
+        soup.find("article", {"class": "product_page"}).find("p", {"class": ""}).text
+    )
+    price = transformation_texte(
+        soup.find("div", {"class": "col-sm-6 product_main"})
+        .find("p", {"class": "price_color"})
+        .text
+    )
+
+    # Extraction et transformation de la disponibilité
+    disponibilite_origin = (
+        soup.find("div", {"class": "col-sm-6 product_main"})
+        .find("p", {"class": "instock availability"})
+        .text
+    )
+    disponibilite = transformation_disponibilite(disponibilite_origin)
+
+    # Traitement des données du tableau
+    tab = {}
+    rows = soup.find("table", {"class": "table table-striped"}).select("tr")
+    for row in rows:
+        header = row.find("th").text if row.find("th") else None
+        value = row.find("td").text if row.find("td") else None
+        if header and value:
+            cleaned_value = transformation_texte(value)
+            tab[header] = cleaned_value
+
+    # Extraction de l'URL du produit
+    canonical_link = soup.find("link", {"rel": "canonical"})
+    product_page_url = canonical_link["href"] if canonical_link else url_livre
+
+    # Regroupement de toutes les données dans une liste
+    return [
+        title,
+        description,
+        price,
+        disponibilite,
+        tab.get("UPC", ""),
+        tab.get("Product Type", ""),
+        tab.get("Price (excl. tax)", ""),
+        tab.get("Price (incl. tax)", ""),
+        tab.get("Number of reviews", ""),
+        product_page_url,
+    ]
+
+
+# Fonction pour sauvegarder les données et les images
+def sauvegarde(donnee, soup, en_tete, nom_fichier_csv="data.csv", folder_name="images"):
+    mode = "a" if os.path.exists(nom_fichier_csv) else "w"
+    with open(nom_fichier_csv, mode, newline="", encoding="utf-8") as fichier_csv:
+        writer = csv.writer(fichier_csv, delimiter=",")
+        if mode == "w":
+            writer.writerow(en_tete)
         writer.writerow(donnee)
 
+    image_element = soup.find("img")
+    if image_element and image_element.get("src"):
+        image_url = image_element["src"]
+        base_url = "https://books.toscrape.com"
+        full_image_url = base_url + image_url.lstrip(".")
+        image_filename = full_image_url.split("/")[-1]
+        os.makedirs(folder_name, exist_ok=True)
+        if full_image_url:
+            response = requests.get(full_image_url, stream=True)
+            if response.status_code == 200:
+                image_path = os.path.join(folder_name, image_filename)
+                with open(image_path, "wb") as file:
+                    for chunk in response.iter_content(1024):
+                        file.write(chunk)
+
+
+def traiter_et_sauvegarder(url_livre):
+    soup = extraction(url_livre)
+    donnee = transformation_tdp(soup, url_livre)
+    sauvegarde(donnee, soup, en_tete, "data.csv", "images")
+
+
+# Fonction pour extraire les URLs des livres d'une catégorie
+def extraire_urls_livres(url_categorie):
+    urls_livres = []
+    base_url = "https://books.toscrape.com/catalogue/"  # URL de base avec /catalogue/
+
+    while True:
+        soup = extraction(url_categorie)
+        livres = soup.find_all("article", class_="product_pod")
+        for livre in livres:
+            lien = livre.find("h3").find("a")["href"]
+            lien_complet = base_url + lien.replace(
+                "../", ""
+            )  # Construction manuelle de l'URL
+            urls_livres.append(lien_complet)
+
+        next_button = soup.find("li", class_="next")
+        if next_button:
+            next_page = next_button.find("a")["href"]
+            url_categorie = urljoin(
+                "https://books.toscrape.com/catalogue/category/books/travel_2/",
+                next_page,
+            )
+        else:
+            break
+
+    return urls_livres
+
+
+# Traiter et sauvegarder les données d'un livre
+
+en_tete = [
+    "titre",
+    "description",
+    "prix",
+    "disponibilite",
+    "upc",
+    "product_type",
+    "price_excl_tax",
+    "price_incl_tax",
+    "reviews",
+    "url",
+]
+
+
+# URL de la catégorie Travel
+url_categorie = (
+    "https://books.toscrape.com/catalogue/category/books/travel_2/index.html"
+)
+
+# Extraction des URLs des livres de la catégorie Travel
+urls_livres = extraire_urls_livres(url_categorie)
+
+for url_livre in urls_livres:
+    traiter_et_sauvegarder(url_livre)
