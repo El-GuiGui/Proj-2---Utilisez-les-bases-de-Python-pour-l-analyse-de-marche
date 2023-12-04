@@ -1,0 +1,19 @@
+# Ignore directories
+Books Categories/
+env3/
+env4/
+env5/
+env6/
+images/
+autres/
+
+# Ignore all .py files
+*.py
+
+# not ignore main.py
+!main.py
+
+# not ignore specific files
+!instruction_project.md
+!README.md
+!requirements.txt
